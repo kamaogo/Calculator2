@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI কার্ড মাস্টার - ULTRA PRO (Vision Edition)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script async src="https://docs.opencv.org/4.5.4/opencv.js" onload="onOpenCvReady();"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', sans-serif; overflow-x: hidden; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        #canvas-output { border-radius: 1rem; box-shadow: 0 0 25px rgba(59, 130, 246, 0.4); width: 100%; max-width: 640px; }
+        #video-feed { display: none; } /* আসল ভিডিও লুকিয়ে রাখা হবে, আমরা ক্যানভাসে আউটপুট দেব */
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-6">
+
+    <header class="text-center mb-6">
+        <h1 class="text-4xl font-extrabold text-blue-500 mb-2 italic">AI CARD MASTER <span class="text-white text-sm underline">VISION</span></h1>
+        <div id="cv-status" class="text-[10px] text-yellow-500 font-bold uppercase">এআই চোখ লোড হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।</div>
+    </header>
+
+    <div id="selection-screen" class="w-full max-w-2xl glass-card p-8 rounded-2xl text-center">
+        <h2 class="text-xl font-semibold mb-6 text-blue-300">মোড নির্বাচন করুন</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button onclick="startGame('Poker')" class="p-4 bg-slate-800 hover:bg-blue-600 transition-all rounded-xl border border-blue-500/30">♠️<p class="mt-1 font-bold italic text-sm">POKER</p></button>
+            <button onclick="startGame('Blackjack')" class="p-4 bg-slate-800 hover:bg-blue-600 transition-all rounded-xl border border-blue-500/30">♥️<p class="mt-1 font-bold italic text-sm">BLACKJACK</p></button>
+            <button onclick="startGame('Rummy')" class="p-4 bg-slate-800 hover:bg-blue-600 transition-all rounded-xl border border-blue-500/30">♣️<p class="mt-1 font-bold italic text-sm">RUMMY</p></button>
+        </div>
+    </div>
+
+    <div id="game-screen" class="hidden w-full max-w-5xl flex flex-col md:flex-row gap-6">
+        <div class="flex-1 glass-card p-4 rounded-2xl">
+            <video id="video-feed" width="640" height="480" autoplay playsinline></video>
+            <canvas id="canvas-output"></canvas>
+            
+            <div class="grid grid-cols-2 gap-3 mt-4">
+                <button onclick="toggleVision()" id="vision-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl uppercase text-[10px] tracking-widest">চোখ চালু করুন</button>
+                <button onclick="resetCount()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl uppercase text-[10px] tracking-widest">রিসেট মেমোরি</button>
+            </div>
+        </div>
+
+        <div class="w-full md:w-80 flex flex-col gap-4">
+            <div class="glass-card p-5 rounded-2xl">
+                <h3 class="text-md font-bold mb-4 border-b border-gray-700 pb-2">এআই এনালিটিক্স</h3>
+                <div id="ai-status" class="text-[10px] text-blue-400 font-bold uppercase mb-2 italic">Vision: Off</div>
+                <div id="ai-suggestion" class="text-xs text-gray-400 leading-relaxed">তাসের ওপর ক্যামেরা ধরুন, এআই অটোমেটিক ডিটেক্ট করার চেষ্টা করবে।</div>
+            </div>
+
+            <div class="glass-card p-4 rounded-2xl bg-gradient-to-br from-slate-800/50 to-blue-900/20">
+                <p class="text-[10px] text-gray-400 font-bold mb-3 uppercase italic">Hi-Lo Counting</p>
+                <div class="flex justify-between items-end">
+                    <div>
+                        <div class="text-xs text-gray-400">Count</div>
+                        <div id="true-count" class="text-2xl font-black text-blue-400">0.0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stream = null;
+        let isVisionActive = false;
+        let video = document.getElementById('video-feed');
+        let canvasFrame = document.getElementById('canvas-output');
+        let context = canvasFrame.getContext('2d');
+        let src, dst, cap;
+
+        function onOpenCvReady() {
+            document.getElementById('cv-status').innerText = "এআই চোখ রেডি! (Vision Ready)";
+            document.getElementById('cv-status').className = "text-[10px] text-green-500 font-bold uppercase";
+        }
+
+        async function startGame(g) {
+            document.getElementById('selection-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+                video.srcObject = stream;
+                video.play();
+            } catch (err) {
+                alert("ক্যামেরা পাওয়া যায়নি!");
+            }
+        }
+
+        function toggleVision() {
+            if (!isVisionActive) {
+                isVisionActive = true;
+                document.getElementById('vision-btn').innerText = "চোখ বন্ধ করুন";
+                document.getElementById('ai-status').innerText = "Vision: Scanning...";
+                startProcessing();
+            } else {
+                isVisionActive = false;
+                document.getElementById('vision-btn').innerText = "চোখ চালু করুন";
+                document.getElementById('ai-status').innerText = "Vision: Off";
+            }
+        }
+
+        function startProcessing() {
+            src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+            dst = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+            cap = new cv.VideoCapture(video);
+
+            const FPS = 30;
+            function processVideo() {
+                try {
+                    if (!isVisionActive) {
+                        src.delete(); dst.delete();
+                        return;
+                    }
+                    let begin = Date.now();
+                    cap.read(src);
+                    cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY);
+                    cv.threshold(dst, dst, 120, 255, cv.THRESH_BINARY);
+
+                    // তাসের চারকোনা শেপ খোঁজার লজিক
+                    let contours = new cv.MatVector();
+                    let hierarchy = new cv.Mat();
+                    cv.findContours(dst, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
+
+                    for (let i = 0; i < contours.size(); ++i) {
+                        let cnt = contours.get(i);
+                        let approx = new cv.Mat();
+                        let perimeter = cv.arcLength(cnt, true);
+                        cv.approxPolyDP(cnt, approx, 0.02 * perimeter, true);
+
+                        // যদি ৪টি কোণা পাওয়া যায় (তাসের মতো চারকোনা)
+                        if (approx.rows == 4 && cv.contourArea(cnt) > 5000) {
+                            let rect = cv.boundingRect(cnt);
+                            let point1 = new cv.Point(rect.x, rect.y);
+                            let point2 = new cv.Point(rect.x + rect.width, rect.y + rect.height);
+                            cv.rectangle(src, point1, point2, [0, 255, 0, 255], 2); // সবুজ বর্ডার
+                        }
+                        approx.delete();
+                    }
+
+                    cv.imshow('canvas-output', src);
+                    contours.delete(); hierarchy.delete();
+
+                    let delay = 1000/FPS - (Date.now() - begin);
+                    setTimeout(processVideo, delay);
+                } catch (err) {
+                    console.log("Error: " + err);
+                }
+            }
+            setTimeout(processVideo, 0);
+        }
+
+        function resetCount() {
+            document.getElementById('true-count').innerText = "0.0";
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        }
+    </script>
+</body>
+</html>
